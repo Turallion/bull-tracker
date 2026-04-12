@@ -76,7 +76,7 @@ input {
 
 .hero-copy h1 {
   margin: 12px 0;
-  font-size: clamp(3rem, 6vw, 5.4rem);
+  font-size: clamp(2.5rem, 5vw, 4.4rem);
   line-height: 0.92;
 }
 
