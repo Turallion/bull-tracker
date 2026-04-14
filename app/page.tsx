@@ -239,45 +239,44 @@ async function buildCardPng(result: AnalyzerResult) {
   context.fillStyle = "#b3c6bb";
   context.font = '20px "Courier New", monospace';
   context.fillText(
-    `@${result.profile.username} · ${formatCompact(result.profile.subscribers)} subscribers`,
+    `@${result.profile.username} · ${formatCompact(result.profile.subscribers)} followers`,
     214,
     160
   );
 
-  context.fillStyle = "#f9f7ea";
-  context.font = '700 36px Georgia, "Times New Roman", serif';
-  context.fillText("Funny Comment", 82, 414);
+  const pillY = 292;
+  const pillWidth = 236;
+  const pillHeight = 68;
+  const pillGap = 16;
+  const metaPills = [
+    { label: "Level", value: result.level.name },
+    { label: "Multiplier", value: `${result.engagementMultiplier}x` },
+    { label: "Engagement", value: String(result.engagementRate) }
+  ];
+
+  if (result.isDemo) {
+    metaPills.push({ label: "Mode", value: "Demo fallback" });
+  }
+
+  for (const [index, pill] of metaPills.entries()) {
+    const x = 82 + index * (pillWidth + pillGap);
+    context.fillStyle = "rgba(255,255,255,0.04)";
+    context.strokeStyle = "rgba(255,255,255,0.08)";
+    roundRect(context, x, pillY, pillWidth, pillHeight, 24);
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = "#b3c6bb";
+    context.font = '18px "Courier New", monospace';
+    context.fillText(pill.label, x + 18, pillY + 28);
+    context.fillStyle = "#ffffff";
+    context.font = '700 20px Georgia, "Times New Roman", serif';
+    context.fillText(pill.value, x + 18, pillY + 54);
+  }
+
   context.fillStyle = "#fff8dc";
   context.font = '30px Georgia, "Times New Roman", serif';
-  drawWrappedText(context, result.level.comment, 82, 458, 608, 40, 3);
-
-  context.fillStyle = "#91d8a9";
-  context.font = '19px "Courier New", monospace';
-  context.fillText("MODEL FACTORS", 800, 150);
-  context.fillStyle = "#ffffff";
-  context.font = '700 28px Georgia, "Times New Roman", serif';
-  context.fillText(`${result.engagementMultiplier}x`, 800, 205);
-  context.fillStyle = "#b3c6bb";
-  context.font = '18px "Courier New", monospace';
-  context.fillText("Engagement multiplier", 800, 233);
-
-  context.fillStyle = "#ffffff";
-  context.font = '700 28px Georgia, "Times New Roman", serif';
-  context.fillText(
-    `${formatMoney(result.baseLowerMonthly)} - ${formatMoney(result.baseUpperMonthly)}`,
-    800,
-    298
-  );
-  context.fillStyle = "#b3c6bb";
-  context.font = '18px "Courier New", monospace';
-  context.fillText("Base range", 800, 326);
-
-  context.fillStyle = "#ffffff";
-  context.font = '700 28px Georgia, "Times New Roman", serif';
-  context.fillText(String(result.engagementRate), 800, 391);
-  context.fillStyle = "#b3c6bb";
-  context.font = '18px "Courier New", monospace';
-  context.fillText("Engagement score", 800, 419);
+  drawWrappedText(context, result.level.comment, 82, 410, 860, 40, 3);
 
   context.fillStyle = "#d0d7d3";
   context.font = '20px "Courier New", monospace';
@@ -461,7 +460,7 @@ export default function HomePage() {
                     <p className="card-label">Projected monthly bull range</p>
                     <h2>{result.profile.name}</h2>
                     <p className="muted">
-                      @{result.profile.username} · {formatCompact(result.profile.subscribers)} subscribers
+                      @{result.profile.username} · {formatCompact(result.profile.subscribers)} followers
                     </p>
                   </div>
                 </div>
@@ -481,6 +480,10 @@ export default function HomePage() {
                     <span>Multiplier</span>
                     <strong>{result.engagementMultiplier}x</strong>
                   </div>
+                  <div className="meta-pill">
+                    <span>Engagement score</span>
+                    <strong>{result.engagementRate}</strong>
+                  </div>
                   {result.isDemo ? (
                     <div className="meta-pill">
                       <span>Mode</span>
@@ -490,19 +493,6 @@ export default function HomePage() {
                 </div>
 
                 <p className="commentary">{result.level.comment}</p>
-
-                <div className="stats-grid stats-grid--compact">
-                  <div>
-                    <span>Base range</span>
-                    <strong>
-                      {formatMoney(result.baseLowerMonthly)} - {formatMoney(result.baseUpperMonthly)}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Engagement score</span>
-                    <strong>{result.engagementRate}</strong>
-                  </div>
-                </div>
 
                 <p className="card-footer">Built by @Sherhaneth</p>
               </div>

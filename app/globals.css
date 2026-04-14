@@ -297,7 +297,8 @@ input {
 }
 
 .meta-pill {
-  min-width: 170px;
+  flex: 1 1 170px;
+  min-width: 0;
   padding: 12px 14px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.04);
@@ -321,26 +322,9 @@ input {
 }
 
 .commentary {
-  margin: 22px 0;
+  margin: 22px 0 8px;
   font-size: 1.02rem;
   line-height: 1.7;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.stats-grid--compact {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.stats-grid > div {
-  padding: 16px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .card-footer {

@@ -62,6 +62,21 @@ const roundMoney = (amount: number) => {
   return Math.round(amount / 10) * 10;
 };
 
+const capRangeUpperBound = (lower: number, upper: number, maxSpread = 0.2) => {
+  const maxUpper = roundMoney(lower * (1 + maxSpread));
+  return Math.max(lower, Math.min(upper, maxUpper));
+};
+
+const capRangeAbsoluteMax = (lower: number, upper: number, absoluteMax: number) => {
+  const cappedMax = Math.max(0, roundMoney(absoluteMax));
+  const cappedLower = Math.min(lower, cappedMax);
+  const cappedUpper = Math.min(upper, cappedMax);
+  return {
+    lower: cappedLower,
+    upper: Math.max(cappedLower, cappedUpper)
+  };
+};
+
 const calcWeightedInteractions = (tweets: TweetSample[]) =>
   tweets.reduce((sum, tweet) => {
     const { likes, reposts, replies, bookmarks, quotes } = tweet.metrics;
@@ -81,6 +96,52 @@ const calcConsistencyBonus = (tweets: TweetSample[]) => {
   const avg = perTweet.reduce((sum, value) => sum + value, 0) / perTweet.length;
   const hits = perTweet.filter((value) => value >= avg * 0.6).length;
   return clamp((hits / perTweet.length - 0.35) * 0.12, 0, 0.12);
+};
+
+const calcLargeAccountPenalty = (
+  subscribers: number,
+  tweets: TweetSample[],
+  weightedInteractions: number
+) => {
+  if (subscribers < 10000) {
+    return 0;
+  }
+
+  const sizeFactor = clamp((subscribers - 10000) / 25000, 0, 1);
+  const tweetCount = tweets.length;
+  const totalImpressions = tweets.reduce((sum, tweet) => sum + (tweet.metrics.impressions ?? 0), 0);
+  const avgImpressionsPerTweet = tweetCount ? totalImpressions / tweetCount : 0;
+  const impressionReachRatio = subscribers > 0 ? avgImpressionsPerTweet / subscribers : 0;
+  const fallbackWeightedPerTweet = tweetCount ? weightedInteractions / tweetCount : 0;
+  const fallbackReachRatio = subscribers > 0 ? fallbackWeightedPerTweet / subscribers : 0;
+  const reachRatio = impressionReachRatio > 0 ? impressionReachRatio : fallbackReachRatio;
+
+  // Large accounts with weak per-post output should be hit harder than small ones.
+  const weakReachPenalty = clamp((0.12 - reachRatio) / 0.12, 0, 1) * (0.85 + sizeFactor * 0.65);
+  const veryWeakReachPenalty = clamp((0.03 - reachRatio) / 0.03, 0, 1) * (0.55 + sizeFactor * 0.35);
+  const postingPenalty =
+    tweetCount >= 16 ? 0 : clamp((16 - tweetCount) / 16, 0, 1) * (0.3 + sizeFactor * 0.35);
+  const inactivityPenalty =
+    tweetCount >= 20 ? 0 : clamp((20 - tweetCount) / 20, 0, 1) * (0.12 + sizeFactor * 0.16);
+
+  return weakReachPenalty + veryWeakReachPenalty + postingPenalty + inactivityPenalty;
+};
+
+const calcSmallCreatorBonus = (subscribers: number, tweets: TweetSample[]) => {
+  if (subscribers <= 0 || subscribers >= 5000 || !tweets.length) {
+    return 0;
+  }
+
+  const totalImpressions = tweets.reduce((sum, tweet) => sum + (tweet.metrics.impressions ?? 0), 0);
+  const avgImpressionsPerTweet = totalImpressions / tweets.length;
+  const reachRatio = avgImpressionsPerTweet / subscribers;
+  const sizeFactor = clamp((5000 - subscribers) / 5000, 0, 1);
+
+  const strongReachBonus = clamp((reachRatio - 0.6) / 0.9, 0, 1) * (0.18 + sizeFactor * 0.22);
+  const breakoutBonus = clamp((reachRatio - 1.5) / 1.5, 0, 1) * (0.12 + sizeFactor * 0.18);
+  const consistencyBonus = tweets.length >= 12 ? 0.05 * sizeFactor : 0;
+
+  return strongReachBonus + breakoutBonus + consistencyBonus;
 };
 
 const pickLevel = (incomeMidpoint: number): EstimateLevel => {
@@ -135,20 +196,50 @@ export function estimateBullEarnings(input: AnalyzerInput): AnalyzerResult {
   const normalizedSubscriberBase = Math.max(Math.sqrt(Math.max(subscribers, 1)) * 18, 40);
   const engagementRate = weightedInteractions / normalizedSubscriberBase;
   const consistencyBonus = calcConsistencyBonus(tweets);
-  const engagementMultiplier = clamp(0.82 + Math.log10(engagementRate + 1) * 0.48 + consistencyBonus, 0.8, 1.95);
+  const largeAccountPenalty = calcLargeAccountPenalty(subscribers, tweets, weightedInteractions);
+  const smallCreatorBonus = calcSmallCreatorBonus(subscribers, tweets);
+  const engagementMultiplier = clamp(
+    0.82 +
+      Math.log10(engagementRate + 1) * 0.48 +
+      consistencyBonus +
+      smallCreatorBonus -
+      largeAccountPenalty,
+    0.25,
+    1.95
+  );
 
-  const lowerMonthly = roundMoney(baseRange.lower * engagementMultiplier);
-  const upperMonthly = roundMoney(baseRange.upper * (engagementMultiplier + 0.08));
-  const midpoint = (lowerMonthly + upperMonthly) / 2;
+  const baseRangeSpreadCapped = {
+    lower: roundMoney(baseRange.lower),
+    upper: capRangeUpperBound(roundMoney(baseRange.lower), roundMoney(baseRange.upper))
+  };
+  const baseRangeFinal = capRangeAbsoluteMax(
+    baseRangeSpreadCapped.lower,
+    baseRangeSpreadCapped.upper,
+    subscribers * 2
+  );
+
+  const monthlyRangeSpreadCapped = {
+    lower: roundMoney(baseRange.lower * engagementMultiplier),
+    upper: capRangeUpperBound(
+      roundMoney(baseRange.lower * engagementMultiplier),
+      roundMoney(baseRange.upper * (engagementMultiplier + 0.08))
+    )
+  };
+  const monthlyRangeFinal = capRangeAbsoluteMax(
+    monthlyRangeSpreadCapped.lower,
+    monthlyRangeSpreadCapped.upper,
+    subscribers * 3
+  );
+  const midpoint = (monthlyRangeFinal.lower + monthlyRangeFinal.upper) / 2;
 
   return {
     profile: input.profile,
     tweetsAnalyzed: tweets.length,
-    lowerMonthly,
-    upperMonthly,
+    lowerMonthly: monthlyRangeFinal.lower,
+    upperMonthly: monthlyRangeFinal.upper,
     level: pickLevel(midpoint),
-    baseLowerMonthly: roundMoney(baseRange.lower),
-    baseUpperMonthly: roundMoney(baseRange.upper),
+    baseLowerMonthly: baseRangeFinal.lower,
+    baseUpperMonthly: baseRangeFinal.upper,
     engagementMultiplier: Number(engagementMultiplier.toFixed(2)),
     consistencyBonus: Number(consistencyBonus.toFixed(2)),
     engagementRate: Number(engagementRate.toFixed(2)),
